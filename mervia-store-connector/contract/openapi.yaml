@@ -1,0 +1,1000 @@
+openapi: 3.1.0
+info:
+  title: Mervia Store Connector — endpoints the store serves
+  version: 1.0.0-draft.3
+  description: |
+    The HTTP contract a store implements so that Mervia's marketing agent can work on it
+    without a Shopify app. Mervia calls these endpoints; the store serves them. The store
+    never has to call Mervia: four groups of endpoints, all read or written by Mervia with the
+    store's API key — store and catalog (items 1, 2, 3, 4), orders (item 8), articles
+    (item 5) and product-page content (item 6).
+
+    This file is the authoritative form of the integration document. Where
+    prose and this file disagree, this file wins. Unknown fields are ignored on both sides,
+    so a store may add fields freely.
+
+    Conventions:
+    - Base URL: one versioned path, HTTPS only, on `primary_host`'s domain: the primary host
+      without a leading `www.` (`example.com`) or a name under it (`www.example.com`,
+      `api.example.com`). No IP address, and no `*.myshopify.com` host. All paths below are
+      relative to it.
+    - Auth: `Authorization: Bearer <key>` on every request; the store issues the key.
+      Accepting two valid keys at once lets either party rotate without downtime. A revoked
+      key returns 401 on every endpoint; Mervia treats 401 and 403 alike as a rejected key.
+    - Format: JSON UTF-8; timestamps ISO 8601 with timezone; money as a decimal string plus
+      an ISO 4217 code; ids are opaque strings, stable for the life of the record (an
+      integer id sent as a number is accepted).
+    - Lists: cursor pagination (`limit` at most 250, `cursor`), `items` + `next_cursor`
+      (null on the last page); `updated_since` on lists that change.
+    - Responses Mervia accepts: at most 10 MB per response (a larger one is refused, so page
+      through lists); Mervia sends `Accept-Encoding: identity` and refuses a compressed body;
+      30 seconds per request, a slower answer counts as a failure; redirects are not followed,
+      every endpoint answers at its own URL. Mervia sends at most 2 requests per second and
+      reads the full catalog at most every 6 hours.
+    - Errors: standard HTTP status with `{"error": "<code>", "message": "<text>"}`; 429 with
+      `Retry-After` is honoured.
+    - Capabilities: `GET /store` names the items the store has implemented; Mervia enables
+      only those. Value → item: `products` 2, `reviews` 3, `pages` 4, `articles` 5,
+      `orders` 8, `content_push` 6. Items 7 (tracking tag) and 9 (Search Console tag) have no
+      value: Mervia reads them from the store's public home page.
+
+    Beside this file, `schemas/order.schema.json` is the order object that `GET /orders`
+    lists. The other JSON Schemas there cover what exists by arrangement with Mervia only:
+    the two webhooks a store may send instead of being read (`order_webhook`,
+    `product_webhook`) and the include document of the pull alternative to item 6. No store
+    sends webhooks by default. When arranged, every webhook carries
+    `X-Mervia-Timestamp` (unix seconds) and `X-Mervia-Signature`: `sha256=` + lowercase hex
+    HMAC-SHA256, keyed with the shared secret, over the timestamp header's exact value, a
+    single `.`, then the raw request body (`timestamp.body`). A body over 256 KB is refused
+    before the signature is checked. The first `order.paid` fixes an order's amounts; later
+    changes travel as `order.refunded` with the cumulative `refunded_total`, and
+    `order.cancelled` counts as a full refund. See `README.md` beside this file.
+  contact:
+    name: Mervia
+    url: https://mervia.ai
+  license:
+    name: MIT
+servers:
+  - url: https://{host}/api/mervia/v1
+    description: Example base URL. The store chooses the exact path.
+    variables:
+      host:
+        default: www.example.com
+security:
+  - bearerAuth: []
+tags:
+  - name: read
+    description: Items 1, 2, 3, 4, 8 — what Mervia learns about the store
+  - name: publish
+    description: Items 5 and 6 — what Mervia places on the site
+
+paths:
+  /store:
+    get:
+      operationId: getStore
+      tags: [read]
+      summary: "Item 1 — store identity and declared capabilities"
+      description: |
+        Called when connecting and before every write, to confirm the key still belongs to
+        the store Mervia connected. `store_id` must never change for this store.
+      responses:
+        "200":
+          description: The store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Store"
+              example:
+                store_id: example-us
+                name: Example Store
+                primary_host: www.example.com
+                hosts: [www.example.com, example.com]
+                currency: USD
+                locale: en-US
+                timezone: America/Los_Angeles
+                capabilities: [products, reviews, articles, pages, orders, content_push]
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /products:
+    get:
+      operationId: listProducts
+      tags: [read]
+      summary: "Item 2 — the catalog"
+      description: |
+        A product missing from one full listing is marked inactive, and becomes active again
+        when it returns, so a full listing must include every active product. Every field
+        beyond the required ones improves what the agent can say; `specs`, `category` and
+        `rating` matter most, and `specs` may start empty. Product ids must be stable across
+        edits: an auto-increment id is, a slug is not.
+      parameters:
+        - $ref: "#/components/parameters/limit"
+        - $ref: "#/components/parameters/cursor"
+        - $ref: "#/components/parameters/updatedSince"
+        - name: status
+          in: query
+          description: |
+            `active` (default) returns products a shopper can see. `all` also returns
+            drafts and archived products, which Mervia needs in order to notice removals.
+          schema:
+            type: string
+            enum: [active, draft, archived, all]
+            default: active
+      responses:
+        "200":
+          description: A page of products
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, next_cursor]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Product"
+                  next_cursor:
+                    $ref: "#/components/schemas/NextCursor"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /products/{id}:
+    parameters:
+      - $ref: "#/components/parameters/productId"
+    get:
+      operationId: getProduct
+      tags: [read]
+      summary: "Item 2 — one product, same shape as the list"
+      responses:
+        "200":
+          description: The product
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Product"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /products/{id}/reviews:
+    parameters:
+      - $ref: "#/components/parameters/productId"
+    get:
+      operationId: listProductReviews
+      tags: [read]
+      summary: "Item 3 — reviews already displayed on the site, with the aggregate"
+      description: |
+        Only reviews the store already shows publicly are returned. `author_display_name`
+        is what the store displays (a first name, initials), never an email address.
+        `summary.count` is at least the number of reviews returned.
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 100
+        - $ref: "#/components/parameters/cursor"
+        - $ref: "#/components/parameters/updatedSince"
+      responses:
+        "200":
+          description: A page of reviews plus the aggregate
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [summary, items, next_cursor]
+                properties:
+                  summary:
+                    $ref: "#/components/schemas/ReviewSummary"
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Review"
+                  next_cursor:
+                    $ref: "#/components/schemas/NextCursor"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /orders:
+    get:
+      operationId: listOrders
+      tags: [read]
+      summary: "Item 8 — paid orders, read hourly for attribution"
+      description: |
+        Mervia calls this endpoint about once an hour with `updated_since` set to its last read
+        and attributes the orders to AI-referred sessions through `mervia_attribution`; the
+        first read after connecting goes back 60 days. Orders are listed oldest change first
+        (ascending `updated_at`); an unsorted listing is refused and the store is marked
+        failed. Only
+        orders that have been paid are listed (an order never paid is not listed at all); a
+        refund or cancellation after payment changes `status`, `refunded_total` and
+        `updated_at`, so it is picked up by the next read. Amounts: Mervia keeps an order's
+        amounts from the first time it reads the order as paid; a change after payment is
+        recorded as a refund raising `refunded_total` (a running total, not a delta), and
+        `cancelled` counts as a full refund. The order object is `schemas/order.schema.json`.
+        No customer name, email, phone or address is returned. The store declares `orders`.
+      parameters:
+        - $ref: "#/components/parameters/limit"
+        - $ref: "#/components/parameters/cursor"
+        - $ref: "#/components/parameters/updatedSince"
+      responses:
+        "200":
+          description: A page of paid orders, oldest change first
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, next_cursor]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Order"
+                  next_cursor:
+                    $ref: "#/components/schemas/NextCursor"
+              example:
+                items:
+                  - id: 10042
+                    number: "#10042"
+                    status: paid
+                    paid_at: "2026-09-23T17:15:00Z"
+                    updated_at: "2026-09-23T17:15:00Z"
+                    currency: USD
+                    subtotal: "129.50"
+                    discount_total: "10.00"
+                    shipping: "5.00"
+                    tax: "11.66"
+                    total: "136.16"
+                    refunded_total: "0.00"
+                    line_items:
+                      - product_id: 101
+                        variant_id: 1001
+                        sku: EX-M1
+                        quantity: 1
+                        price: "129.50"
+                    mervia_attribution: "v1.9f2c1a7b"
+                next_cursor: null
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /pages:
+    get:
+      operationId: listPages
+      tags: [read]
+      summary: "Item 4 (optional) — policies and information pages"
+      description: Without this endpoint Mervia crawls the same pages from the sitemap.
+      parameters:
+        - $ref: "#/components/parameters/limit"
+        - $ref: "#/components/parameters/cursor"
+        - $ref: "#/components/parameters/updatedSince"
+      responses:
+        "200":
+          description: A page of pages
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, next_cursor]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Page"
+                  next_cursor:
+                    $ref: "#/components/schemas/NextCursor"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /articles:
+    get:
+      operationId: listArticles
+      tags: [publish]
+      summary: "Item 5 — list articles, including hidden ones"
+      description: |
+        The list includes hidden articles: Mervia has to find its own hidden posts to
+        recover one it created but never published, and to clean up on disconnect. Mervia
+        filters by its own tag to find what it owns.
+      parameters:
+        - name: type
+          in: query
+          schema:
+            $ref: "#/components/schemas/ArticleType"
+        - name: tag
+          in: query
+          description: Return only articles carrying this tag, matched exactly.
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [hidden, published, all]
+            default: all
+        - $ref: "#/components/parameters/limit"
+        - $ref: "#/components/parameters/cursor"
+        - $ref: "#/components/parameters/updatedSince"
+      responses:
+        "200":
+          description: A page of articles
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, next_cursor]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Article"
+                  next_cursor:
+                    $ref: "#/components/schemas/NextCursor"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      operationId: createArticle
+      tags: [publish]
+      summary: "Item 5 — create an article, always hidden"
+      description: |
+        The created article is `hidden`: not public at its URL, not in the listing, not in
+        the sitemap. The response carries the final `url`, a `preview_url` that renders the
+        hidden article to a request carrying Mervia's API key, and `content_digest`, a stable
+        hash of the stored `body_html`.
+
+        `featured_image_url`: the store either copies the remote image into its media storage
+        or answers 415, in which case Mervia publishes without a hero image.
+
+        The preview and the public article page show the body text as Mervia sent it. Wrapping
+        the body in the site's layout is fine; rewriting the text (smart quotes, for example)
+        or inserting elements inside the body makes Mervia's check fail.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ArticleCreate"
+      responses:
+        "201":
+          description: Created (hidden)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Article"
+        "200":
+          description: Created (hidden); 200 is accepted as well as 201
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Article"
+        "415":
+          description: The featured image URL cannot be accepted; Mervia retries without it
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "422":
+          $ref: "#/components/responses/Invalid"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /articles/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          $ref: "#/components/schemas/Id"
+    get:
+      operationId: getArticle
+      tags: [publish]
+      summary: "Item 5 — read one article, including content_digest"
+      responses:
+        "200":
+          description: The article
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Article"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    patch:
+      operationId: updateArticle
+      tags: [publish]
+      summary: "Item 5 — change any field; status published sets it live, hidden takes it down"
+      description: |
+        A published article is at its `url`, in the listing and in the sitemap, like any post
+        written by the store's team. Setting `status` back to `hidden` removes it from all
+        three. `content_digest` changes only when `body_html` changes. The public page shows
+        the body text as sent, with nothing rewritten or inserted inside it.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ArticleUpdate"
+      responses:
+        "200":
+          description: The updated article
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Article"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/Invalid"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    delete:
+      operationId: deleteArticle
+      tags: [publish]
+      summary: "Item 5 — remove an article"
+      responses:
+        "204":
+          description: Deleted
+        "200":
+          description: Deleted; 200 with any body is accepted as well as 204
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /products/{id}/content:
+    parameters:
+      - $ref: "#/components/parameters/productId"
+    put:
+      operationId: putProductContent
+      tags: [publish]
+      summary: "Item 6 — store Mervia's product-page document"
+      description: |
+        Item 6 is delivered by push: Mervia sends the document here, and the store declares
+        `content_push`. The store stores the document, replacing any earlier version (a `version`
+        lower than the stored one may be ignored), and renders `head_html` inside `<head>` and
+        `body_html` where the shopping guide should appear, both unchanged and on the server
+        (not in browser JavaScript). Nothing is stored until Mervia sends a document, and the
+        page renders as before Mervia until then. After every change Mervia fetches the public
+        product page and looks for the element ids named in `ProductContent` to confirm the
+        change is live. Only by arrangement with Mervia, a store may
+        declare `content_pull` instead and fetch the same document from Mervia's include route
+        (`schemas/include-response.schema.json`); it is not offered by default.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProductContent"
+      responses:
+        "200":
+          description: Stored
+        "204":
+          description: Stored
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    delete:
+      operationId: deleteProductContent
+      tags: [publish]
+      summary: "Item 6 — remove the document; the page renders as before Mervia"
+      responses:
+        "200":
+          description: Removed
+        "204":
+          description: Removed
+        "404":
+          description: Nothing stored for this product; treated as removed
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: The API key the store issues to Mervia.
+
+  parameters:
+    limit:
+      name: limit
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 250
+        default: 250
+    cursor:
+      name: cursor
+      in: query
+      description: Opaque, from the previous page's `next_cursor`.
+      schema:
+        type: string
+    updatedSince:
+      name: updated_since
+      in: query
+      description: Return records changed at or after this timestamp, including removals where the record carries a status.
+      schema:
+        type: string
+        format: date-time
+    productId:
+      name: id
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/Id"
+
+  responses:
+    Unauthorized:
+      description: The key is missing, wrong or revoked
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    NotFound:
+      description: No such record
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Invalid:
+      description: The body failed validation
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    RateLimited:
+      description: Too many requests; Mervia honours Retry-After
+      headers:
+        Retry-After:
+          schema:
+            type: integer
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
+  schemas:
+    Id:
+      description: An opaque identifier, stable for the life of the record (an auto-increment id is; a slug is not). Integers are accepted and treated as their decimal string.
+      oneOf:
+        - type: string
+          minLength: 1
+        - type: integer
+    NextCursor:
+      description: Opaque cursor for the next page, or null on the last page.
+      type: [string, "null"]
+    Order:
+      description: One paid order; defined once in schemas/order.schema.json and shared with the by-arrangement order webhook.
+      $ref: "https://mervia.ai/store-connector/schemas/order.schema.json"
+
+    Money:
+      description: A decimal amount as a string, e.g. "129.00".
+      type: string
+      pattern: '^-?\d+(\.\d+)?$'
+    Currency:
+      type: string
+      pattern: "^[A-Z]{3}$"
+    Timestamp:
+      type: string
+      format: date-time
+    Url:
+      type: string
+      format: uri
+      pattern: "^https://"
+
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+          description: A short machine-readable code
+        message:
+          type: string
+
+    Capability:
+      type: string
+      description: >-
+        orders is item 8 (Mervia reads GET /orders). content_push is item 6 (Mervia sends the
+        product-page document to PUT /products/{id}/content). The rest of the default set is products,
+        reviews, articles and pages. Three values exist by arrangement with Mervia only: order_webhook
+        and product_webhook (the store sends signed events instead of, or as well as, being read) and
+        content_pull (the store fetches the document from Mervia's include route; never together with
+        content_push).
+      enum:
+        - products
+        - reviews
+        - articles
+        - pages
+        - orders
+        - content_push
+        - content_pull
+        - order_webhook
+        - product_webhook
+
+    Store:
+      type: object
+      required: [store_id, name, primary_host, hosts, currency, capabilities]
+      properties:
+        store_id:
+          $ref: "#/components/schemas/Id"
+          description: >-
+            Any string the store chooses, stable forever: it never changes for this store. Not
+            all digits, and not starting with "custom:", a prefix Mervia reserves. The same value
+            goes in the tracking tag's data-store attribute (item 7).
+        name:
+          type: string
+        primary_host:
+          type: string
+          description: >-
+            The canonical hostname serving the store, e.g. www.example.com. The base URL must be
+            on its domain, and its home page carries the tracking tag before connecting.
+        hosts:
+          type: array
+          minItems: 1
+          items:
+            type: string
+          description: >-
+            Every hostname that serves the store, so Mervia recognises the store's URLs when AI
+            assistants cite them; product URLs must use one of them. Every declared host is on
+            primary_host's domain (the primary host without a leading www., or a name under it).
+            No IP addresses, and no *.myshopify.com host.
+        currency:
+          $ref: "#/components/schemas/Currency"
+        locale:
+          type: string
+          description: BCP 47, e.g. en-US
+        timezone:
+          type: string
+          description: IANA name, e.g. America/Los_Angeles
+        capabilities:
+          type: array
+          items:
+            $ref: "#/components/schemas/Capability"
+          description: The items the store has implemented; Mervia enables only these. The default set is products, reviews, articles, pages, orders and content_push; order_webhook, product_webhook and content_pull only by arrangement with Mervia (content_pull never together with content_push).
+
+    Image:
+      type: object
+      required: [url]
+      properties:
+        url:
+          $ref: "#/components/schemas/Url"
+          description: >-
+            https, with no whitespace and none of the characters ( ) < > " ' or a backtick;
+            percent-encode them if a file name contains them. Mervia refuses any other image URL.
+        alt:
+          type: string
+        position:
+          type: integer
+          minimum: 1
+
+    Option:
+      type: object
+      required: [name, values]
+      properties:
+        name:
+          type: string
+        values:
+          type: array
+          items:
+            type: string
+
+    Spec:
+      type: object
+      required: [name, value]
+      properties:
+        name:
+          type: string
+        value:
+          type: string
+
+    Rating:
+      type: object
+      required: [average, count]
+      properties:
+        average:
+          type: number
+          minimum: 0
+          maximum: 5
+        count:
+          type: integer
+          minimum: 0
+
+    Variant:
+      type: object
+      required: [id, price, currency, available]
+      properties:
+        id:
+          $ref: "#/components/schemas/Id"
+        title:
+          type: string
+        sku:
+          type: string
+        gtin:
+          type: string
+          description: UPC/EAN if known
+        options:
+          type: object
+          additionalProperties:
+            type: string
+          description: 'e.g. {"Plug": "US"}'
+        price:
+          $ref: "#/components/schemas/Money"
+        compare_at_price:
+          oneOf:
+            - $ref: "#/components/schemas/Money"
+            - type: "null"
+        currency:
+          $ref: "#/components/schemas/Currency"
+        available:
+          type: boolean
+        inventory_quantity:
+          type: integer
+        image_url:
+          $ref: "#/components/schemas/Url"
+        url:
+          $ref: "#/components/schemas/Url"
+
+    Product:
+      type: object
+      required: [id, url, title, description_html, status, updated_at, images, variants]
+      properties:
+        id:
+          $ref: "#/components/schemas/Id"
+        handle:
+          type: string
+        url:
+          $ref: "#/components/schemas/Url"
+          description: >-
+            The canonical public page. This is what Mervia cites, so it must be the final URL, not
+            one that redirects, https, and on one of the hosts declared in GET /store; Mervia refuses
+            any other product URL.
+        title:
+          type: string
+        description_html:
+          type: string
+        brand:
+          type: string
+        product_type:
+          type: string
+        category:
+          type: string
+          description: A taxonomy path, e.g. "Home & Garden > Kitchen > Kettles"
+        tags:
+          type: array
+          items:
+            type: string
+        status:
+          type: string
+          enum: [active, draft, archived]
+        published_at:
+          oneOf:
+            - $ref: "#/components/schemas/Timestamp"
+            - type: "null"
+        created_at:
+          $ref: "#/components/schemas/Timestamp"
+        updated_at:
+          $ref: "#/components/schemas/Timestamp"
+        images:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/Image"
+        options:
+          type: array
+          items:
+            $ref: "#/components/schemas/Option"
+        variants:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/Variant"
+          description: A product without variants is one variant carrying the product's own price.
+        specs:
+          type: array
+          items:
+            $ref: "#/components/schemas/Spec"
+        rating:
+          $ref: "#/components/schemas/Rating"
+
+    ReviewSummary:
+      type: object
+      required: [average, count]
+      properties:
+        average:
+          type: number
+          minimum: 0
+          maximum: 5
+        count:
+          type: integer
+          minimum: 0
+
+    Review:
+      type: object
+      required: [id, rating, body, created_at]
+      properties:
+        id:
+          $ref: "#/components/schemas/Id"
+        rating:
+          type: integer
+          minimum: 1
+          maximum: 5
+        title:
+          type: string
+        body:
+          type: string
+        author_display_name:
+          type: string
+        verified_buyer:
+          type: boolean
+        created_at:
+          $ref: "#/components/schemas/Timestamp"
+
+    PageKind:
+      type: string
+      enum: [page, shipping, returns, warranty, privacy, terms, faq, about, contact]
+
+    Page:
+      type: object
+      required: [id, kind, title, url, body_html, updated_at]
+      properties:
+        id:
+          $ref: "#/components/schemas/Id"
+        kind:
+          $ref: "#/components/schemas/PageKind"
+        title:
+          type: string
+        url:
+          $ref: "#/components/schemas/Url"
+        body_html:
+          type: string
+        updated_at:
+          $ref: "#/components/schemas/Timestamp"
+
+    ArticleType:
+      type: string
+      enum: [post, page]
+      description: post is a blog post. page (a standalone landing page) is optional and not needed for go-live.
+    ArticleStatus:
+      type: string
+      enum: [hidden, published]
+
+    ArticleCreate:
+      type: object
+      required: [type, title, body_html]
+      properties:
+        type:
+          $ref: "#/components/schemas/ArticleType"
+        title:
+          type: string
+        slug:
+          type: string
+          description: Requested slug; the store may adjust it and returns the final one.
+        excerpt:
+          type: string
+        body_html:
+          type: string
+        author:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+          description: Stored verbatim. "mervia" marks Mervia's posts; "mervia-case-<id>" ties a post to the work that produced it.
+        featured_image_url:
+          $ref: "#/components/schemas/Url"
+        meta_title:
+          type: string
+        meta_description:
+          type: string
+        status:
+          type: string
+          enum: [hidden]
+          description: Always hidden on create; if sent, must be hidden.
+
+    ArticleUpdate:
+      type: object
+      properties:
+        title:
+          type: string
+        slug:
+          type: string
+        excerpt:
+          type: string
+        body_html:
+          type: string
+        author:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+        featured_image_url:
+          $ref: "#/components/schemas/Url"
+        meta_title:
+          type: string
+        meta_description:
+          type: string
+        status:
+          $ref: "#/components/schemas/ArticleStatus"
+
+    Article:
+      type: object
+      required: [id, type, title, slug, url, body_html, status, content_digest, created_at, updated_at]
+      properties:
+        id:
+          $ref: "#/components/schemas/Id"
+        type:
+          $ref: "#/components/schemas/ArticleType"
+        title:
+          type: string
+        slug:
+          type: string
+        url:
+          $ref: "#/components/schemas/Url"
+          description: The final public URL, valid once published
+        preview_url:
+          $ref: "#/components/schemas/Url"
+          description: Renders the article while hidden to a request carrying Mervia's API key; without the key it must not show the article.
+        excerpt:
+          type: string
+        body_html:
+          type: string
+        author:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+        featured_image_url:
+          oneOf:
+            - $ref: "#/components/schemas/Url"
+            - type: "null"
+        meta_title:
+          type: string
+        meta_description:
+          type: string
+        status:
+          $ref: "#/components/schemas/ArticleStatus"
+        published_at:
+          oneOf:
+            - $ref: "#/components/schemas/Timestamp"
+            - type: "null"
+        created_at:
+          $ref: "#/components/schemas/Timestamp"
+        updated_at:
+          $ref: "#/components/schemas/Timestamp"
+        content_digest:
+          type: string
+          description: A stable hash of the stored body_html, e.g. "sha256:…". Changes only when body_html changes.
+
+    ProductContent:
+      type: object
+      required: [version, head_html, body_html]
+      properties:
+        version:
+          type: integer
+          minimum: 1
+          description: Monotonic per product; a lower version than the stored one may be ignored.
+        head_html:
+          type: string
+          description: >-
+            Zero or more <script type="application/ld+json"> blocks with the ids
+            mervia-product-schema (Product and Offer), mervia-faq-schema and mervia-review-schema,
+            or an empty string; printed unchanged inside <head>. Mervia looks for these ids on
+            the public page to confirm a change is live.
+        body_html:
+          type: string
+          description: >-
+            A <section id="mervia-shopping-guide"> element (the folded shopping guide), or an
+            empty string; printed unchanged where the guide should appear, under the product
+            description.

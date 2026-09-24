@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mervia.ai/store-connector/schemas/include-response.schema.json",
+  "title": "Product-page include response (item 6, pull alternative, by arrangement only)",
+  "description": "The pull alternative to item 6, available by arrangement with Mervia only; item 6 is delivered by push (PUT /products/{id}/content in openapi.yaml) unless agreed otherwise. What Mervia returns to GET https://app.mervia.ai/include/v1/{store_key}/products/{product_id} with Authorization: Bearer <include key>. 200 with this body; 404 when nothing is live for the product; 304 on a matching If-None-Match. Cache-Control: private, max-age=900 and an ETag of the version. The store prints head_html inside <head> and body_html where the shopping guide should appear, both unchanged and rendered on the server. Fetch rules: 1-second timeout, 15-minute cache per product, serve the last good copy on any error or timeout, print nothing when there is none. The include key must stay on the server, never in page HTML.",
+  "type": "object",
+  "required": ["version", "head_html", "body_html"],
+  "properties": {
+    "version": { "type": "integer", "minimum": 1 },
+    "head_html": {
+      "type": "string",
+      "description": "Zero or more <script type=\"application/ld+json\"> blocks with ids mervia-product-schema, mervia-faq-schema, mervia-review-schema."
+    },
+    "body_html": {
+      "type": "string",
+      "description": "A <section id=\"mervia-shopping-guide\"> element, or an empty string."
+    }
+  }
+}

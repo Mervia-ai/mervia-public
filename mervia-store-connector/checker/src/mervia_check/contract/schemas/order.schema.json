@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mervia.ai/store-connector/schemas/order.schema.json",
+  "title": "Order (item 8)",
+  "description": "One paid order, as GET /orders lists it (openapi.yaml, items[]) and as the by-arrangement order webhook carries it (order-event.schema.json, order). One definition, so the two never drift. Only orders that have been paid appear: an order never paid is not an order to Mervia. status is paid, refunded or cancelled; updated_at changes whenever the order is paid, refunded or cancelled, so updated_since finds every change. Mervia keeps an order's amounts from the first time it reads the order as paid; an amount change after payment is recorded as a refund raising refunded_total (a running total, not a delta), and cancelled counts as a full refund (refunded_total equal to total). No customer name, email, phone or address is returned.",
+  "type": "object",
+  "required": ["id", "status", "paid_at", "updated_at", "currency", "total", "refunded_total", "line_items"],
+  "properties": {
+    "id": { "$ref": "#/$defs/id" },
+    "number": { "type": "string", "description": "The order number shown to the customer, e.g. \"#10042\"." },
+    "status": {
+      "type": "string",
+      "enum": ["paid", "refunded", "cancelled"],
+      "description": "paid until money goes back; refunded once any amount has been refunded; cancelled when the order was cancelled after payment (a full refund)."
+    },
+    "paid_at": { "type": "string", "format": "date-time" },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Changes whenever the order is paid, refunded or cancelled. GET /orders?updated_since= compares against it."
+    },
+    "currency": { "type": "string", "pattern": "^[A-Z]{3}$" },
+    "subtotal": { "$ref": "#/$defs/money" },
+    "discount_total": { "$ref": "#/$defs/money" },
+    "shipping": { "$ref": "#/$defs/money" },
+    "tax": { "$ref": "#/$defs/money" },
+    "total": {
+      "$ref": "#/$defs/money",
+      "description": "What the customer paid. The basis of the ChatGPT-referred revenue Mervia reports; fixed from the first read as paid."
+    },
+    "refunded_total": {
+      "$ref": "#/$defs/money",
+      "description": "Cumulative amount refunded so far (\"0.00\" while nothing is), not a delta; for a cancelled order equal to total."
+    },
+    "line_items": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["product_id", "quantity", "price"],
+        "properties": {
+          "product_id": { "$ref": "#/$defs/id" },
+          "variant_id": { "oneOf": [{ "type": "string" }, { "type": "integer" }, { "type": "null" }] },
+          "sku": { "type": "string" },
+          "quantity": { "type": "integer", "minimum": 1 },
+          "price": { "$ref": "#/$defs/money", "description": "Unit price" }
+        }
+      }
+    },
+    "mervia_attribution": {
+      "type": ["string", "null"],
+      "description": "The raw value of the mervia_attr cookie copied onto the order at checkout, or null if the cookie was absent. The store does not parse it."
+    },
+    "customer_key": {
+      "type": "string",
+      "description": "Optional: SHA-256 of the lowercase email, for repeat-buyer counts. Never the email itself."
+    }
+  },
+  "$defs": {
+    "id": { "oneOf": [{ "type": "string", "minLength": 1 }, { "type": "integer" }] },
+    "money": {
+      "type": "string",
+      "pattern": "^-?\\d+(\\.\\d+)?$",
+      "description": "A decimal amount as a string, e.g. \"129.00\""
+    }
+  }
+}

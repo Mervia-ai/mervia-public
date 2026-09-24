@@ -1,0 +1,19 @@
+{
+    "name": "mervia/store-connector-legacy-php74",
+    "description": "Dev-only manifest for testing the dependency-free PHP 7.4 helpers. The helpers themselves need nothing but ext-curl and ext-json.",
+    "type": "project",
+    "license": "MIT",
+    "require": {
+        "php": ">=7.4",
+        "ext-curl": "*",
+        "ext-json": "*"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^9.6"
+    },
+    "config": {
+        "platform": {
+            "php": "7.4.30"
+        }
+    }
+}

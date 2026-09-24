@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mervia.ai/store-connector/schemas/order-event.schema.json",
+  "title": "Order webhook event (by arrangement with Mervia only)",
+  "description": "Not part of item 8 by default: Mervia reads orders from GET /orders (openapi.yaml). Only by arrangement with Mervia, a store that declares order_webhook sends this event to Mervia's webhook URL when an order is paid, refunded or cancelled. Signed with X-Mervia-Timestamp (unix seconds) and X-Mervia-Signature (sha256=<hex HMAC-SHA256, keyed with the shared secret, over the timestamp header's exact value + '.' + the raw body>). Mervia rejects a signature that does not verify or a timestamp more than 300 seconds from its clock, and refuses a body larger than 256 KB (262,144 bytes) before checking the signature. Deliveries are idempotent on order.id; duplicates of event_id are ignored. The order object is the same as GET /orders returns (order.schema.json), amount rules included: the first order.paid fixes the amounts, a later change travels as order.refunded with the cumulative refunded_total, and order.cancelled counts as a full refund. No customer name, email, phone or address is sent.",
+  "type": "object",
+  "required": ["event_id", "event", "store_id", "order"],
+  "properties": {
+    "event_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Unique per delivery attempt family; Mervia ignores a repeated event_id."
+    },
+    "event": {
+      "type": "string",
+      "enum": ["order.paid", "order.refunded", "order.cancelled"]
+    },
+    "store_id": {
+      "description": "The store_id from GET /store.",
+      "oneOf": [{ "type": "string", "minLength": 1 }, { "type": "integer" }]
+    },
+    "order": { "$ref": "https://mervia.ai/store-connector/schemas/order.schema.json" }
+  }
+}

@@ -1,0 +1,55 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  contract-and-checker:
+    name: "store-connector: contract + mervia-check"
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mervia-store-connector/checker
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python -m pip install --upgrade pip
+      - run: pip install -e ".[dev]"
+      - run: ruff check .
+      - run: pytest -q
+      - name: checker image builds
+        run: docker build -t mervia-check:ci .
+
+  sdk-laravel:
+    name: "store-connector: sdk/laravel (PHP 8.2)"
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mervia-store-connector/sdk/laravel
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.2"
+          tools: composer:v2
+      - run: composer install --no-interaction --prefer-dist
+      - run: vendor/bin/phpunit
+
+  sdk-laravel-legacy-php74:
+    name: "store-connector: legacy-php74 (PHP 7.4)"
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mervia-store-connector/sdk/laravel/legacy-php74
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: "7.4"
+          tools: composer:v2
+      - run: composer install --no-interaction --prefer-dist
+      - run: vendor/bin/phpunit

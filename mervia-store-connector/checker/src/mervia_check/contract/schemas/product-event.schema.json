@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mervia.ai/store-connector/schemas/product-event.schema.json",
+  "title": "Product-changed webhook event (item 11, by arrangement with Mervia only)",
+  "description": "Only by arrangement with Mervia: a store that declares product_webhook sends this to Mervia's webhook URL when a product changes or is deleted, with the same signing as the order event. By default no store sends it: Mervia re-reads products changed since its last read on its own schedule.",
+  "type": "object",
+  "required": ["event_id", "event", "store_id", "product_id"],
+  "properties": {
+    "event_id": { "type": "string", "minLength": 1 },
+    "event": { "type": "string", "enum": ["product.updated", "product.deleted"] },
+    "store_id": { "oneOf": [{ "type": "string", "minLength": 1 }, { "type": "integer" }] },
+    "product_id": { "oneOf": [{ "type": "string", "minLength": 1 }, { "type": "integer" }] },
+    "updated_at": { "type": "string", "format": "date-time" }
+  }
+}
