@@ -23,6 +23,7 @@ from . import (
     fetch,
     origin,
     retry,
+    seg,
     sid,
     sitemap_urls,
     text_in,
@@ -126,7 +127,7 @@ class _Lifecycle:
         return str(art["content_digest"])
 
     def get(self, digest: str) -> None:
-        resp = self.call("5.articles.get", "GET", f"/articles/{self.id}")
+        resp = self.call("5.articles.get", "GET", f"/articles/{seg(self.id)}")
         art = self.article("5.articles.get", resp)
         want = (("id", self.id), ("title", self.title), ("status", "hidden"), ("content_digest", digest))
         diffs = [f for f, value in want if sid(art.get(f)) != value]
@@ -262,14 +263,14 @@ class _Lifecycle:
         )
 
     def patch(self, name: str, changes: dict) -> tuple[dict, httpx.Response]:
-        resp = self.call(name, "PATCH", f"/articles/{self.id}", changes)
+        resp = self.call(name, "PATCH", f"/articles/{seg(self.id)}", changes)
         return self.article(name, resp), resp
 
     def delete(self) -> None:
-        resp = self.call("5.articles.delete", "DELETE", f"/articles/{self.id}")
+        resp = self.call("5.articles.delete", "DELETE", f"/articles/{seg(self.id)}")
         ok_status = resp.status_code in (200, 204)
         self.add(check(ITEM, "5.articles.delete", ok_status, f"expected 204 or 200, got {resp.status_code}", resp))
-        gone = self.call("5.articles.gone", "GET", f"/articles/{self.id}")
+        gone = self.call("5.articles.gone", "GET", f"/articles/{seg(self.id)}")
         self.deleted = gone.status_code == 404  # otherwise the finally-cleanup tries again
         self.add(
             check(
@@ -369,13 +370,13 @@ class _Lifecycle:
         problems: list[str] = []
         for method, body in (("PATCH", {"status": "hidden"}), ("DELETE", None)):
             try:
-                resp = self.ctx.client.api(method, f"/articles/{article_id}", json=body)
+                resp = self.ctx.client.api(method, f"/articles/{seg(article_id)}", json=body)
                 if resp.status_code not in (200, 204, 404):
                     problems.append(f"{method} answered {resp.status_code}")
             except httpx.HTTPError as exc:
                 problems.append(f"{method} failed: {exc}")
         try:
-            if self.ctx.client.api("GET", f"/articles/{article_id}").status_code == 404:
+            if self.ctx.client.api("GET", f"/articles/{seg(article_id)}").status_code == 404:
                 return None
         except httpx.HTTPError as exc:
             problems.append(f"GET failed: {exc}")

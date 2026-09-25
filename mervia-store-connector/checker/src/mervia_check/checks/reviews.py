@@ -6,7 +6,7 @@ import httpx
 
 from .. import contract
 from ..report import Result, check, fail, ok, warn
-from . import Context, body_json, first_products, no_product, sample_product, sid
+from . import Context, body_json, first_products, no_product, sample_product, seg, sid
 
 ITEM = 3
 SCHEMA = contract.response_schema("/products/{id}/reviews")
@@ -26,7 +26,7 @@ def run(ctx: Context) -> list[Result]:
     product, source = _pick(ctx)
     if product is None:
         return [no_product(ctx, ITEM, "3.reviews.schema", source)]
-    path = f"/products/{sid(product.get('id'))}/reviews"
+    path = f"/products/{seg(product.get('id'))}/reviews"
     reviews: list[dict] = []
     summary: dict = {}
     cursor: str | None = None

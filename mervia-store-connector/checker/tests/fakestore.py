@@ -13,7 +13,7 @@ import html
 import json
 from datetime import UTC, datetime
 from typing import Any
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, unquote, urlsplit
 
 import httpx
 
@@ -160,7 +160,7 @@ class FakeStore:
 
     def api(self, request: httpx.Request, path: str, q: dict[str, list[str]]) -> httpx.Response:
         self.auth_headers.append(request.headers.get("Authorization"))
-        parts = path.strip("/").split("/")
+        parts = [unquote(x) for x in path.strip("/").split("/")]  # a %2F inside an id stays in the id
         echo = f"got Authorization: {request.headers.get('Authorization')}"
         if "echo_auth" in self.breaks and parts == ["pages"]:
             return J(401, {"error": "unauthorized", "message": echo})

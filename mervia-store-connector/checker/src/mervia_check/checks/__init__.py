@@ -13,7 +13,7 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, TypeVar
-from urllib.parse import urljoin, urlsplit
+from urllib.parse import quote, urljoin, urlsplit
 
 import httpx
 
@@ -101,6 +101,11 @@ def sid(value: Any) -> str:
     return str(value)
 
 
+def seg(value: Any) -> str:
+    """An id as one URL path segment: percent-encoded, so an id like "SKU-44/blue" stays one segment."""
+    return quote(sid(value), safe="")
+
+
 def text_in(page: str, text: str) -> bool:
     """`text` appears in the HTML either verbatim or HTML-escaped."""
     return text in page or html.escape(text) in page or html.escape(text, quote=False) in page
@@ -155,7 +160,7 @@ def sample_product(ctx: Context) -> tuple[dict[str, Any] | None, httpx.Response 
     """--product-id if given, else the first listed product."""
     if ctx.opts.product_id:
         try:
-            resp = ctx.client.api("GET", f"/products/{ctx.opts.product_id}")
+            resp = ctx.client.api("GET", f"/products/{seg(ctx.opts.product_id)}")
         except httpx.HTTPError as exc:
             return None, exc
         data = body_json(resp)

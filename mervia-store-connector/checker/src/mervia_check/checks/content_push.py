@@ -14,7 +14,7 @@ import httpx
 
 from ..report import Result, check, fail, ok, skip
 from ..stub.include_stub import document
-from . import Context, describe, fetch, in_head, no_product, page_text, retry, sample_product, sid
+from . import Context, describe, fetch, in_head, no_product, page_text, retry, sample_product, seg, sid
 
 ITEM = 6
 IDS = ("mervia-product-schema", "mervia-shopping-guide")
@@ -43,7 +43,7 @@ def run(ctx: Context) -> list[Result]:
     if product is None:
         return [no_product(ctx, ITEM, "6.push.put", source)]
     pid, url = sid(product.get("id")), str(product.get("url", ""))
-    path = f"/products/{pid}/content"
+    path = f"/products/{seg(pid)}/content"
     before = fetch(ctx, url)
     if ids_present(page_text(before)) and not ctx.opts.product_id:
         return [

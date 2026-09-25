@@ -6,7 +6,7 @@ import httpx
 
 from .. import contract
 from ..report import Result, check, fail, ok, skip, warn
-from . import Context, body_json, describe, fetch, sid, text_in
+from . import Context, body_json, describe, fetch, seg, sid, text_in
 
 ITEM = 2
 LIST_SCHEMA = contract.response_schema("/products")
@@ -188,7 +188,7 @@ def _stable(ctx: Context, items: list[dict]) -> Result:
 
 def _get_one(ctx: Context, listed: dict) -> Result:
     name = "2.products.get_one"
-    resp = _get(ctx, f"/products/{sid(listed.get('id'))}")
+    resp = _get(ctx, f"/products/{seg(listed.get('id'))}")
     if not isinstance(resp, httpx.Response):
         return fail(ITEM, name, f"request failed: {resp}", resp)
     if resp.status_code != 200:
