@@ -95,6 +95,13 @@ def _listen(_ctx: click.Context, _param: click.Parameter, value: str | None) -> 
     show_default=True,
     help="Which item 6 delivery to test; auto follows the declared capability (content_push, or content_pull).",
 )
+@click.option(
+    "--mervia-env",
+    type=click.Choice(["production", "staging"]),
+    default="production",
+    show_default=True,
+    help="The Mervia environment the store connects to; item 7 accepts only that environment's tag src.",
+)
 @click.option("--report", "report_format", type=click.Choice(["text", "json"]), default="text", show_default=True)
 @click.option(
     "--output", type=click.Path(dir_okay=False, path_type=Path), help="Write the report here instead of stdout."

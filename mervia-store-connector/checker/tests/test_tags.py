@@ -44,3 +44,21 @@ def test_public_base_url_override(check):
     assert (
         check(FakeStore(), items=[7], public_base_url="https://staging.example.com/").status("7.tag.present") == "pass"
     )
+
+
+def test_staging_run_accepts_the_staging_tag_only(check):
+    run = check(FakeStore(breaks=("staging_tag",)), items=[7], store_id="example-us", mervia_env="staging")
+    assert run.failures() == []
+    assert run.get("7.tag.present").detail == "staging tag"
+    run = check(FakeStore(), items=[7], mervia_env="staging")
+    assert run.status("7.tag.present") == "fail"
+    assert "staging-marketing.mervia.ai" in run.get("7.tag.present").detail
+    assert "production tag instead" in run.get("7.tag.present").detail
+
+
+def test_production_run_names_a_staging_tag(check):
+    run = check(FakeStore(breaks=("staging_tag",)), items=[7])
+    assert run.status("7.tag.present") == "fail"
+    detail = run.get("7.tag.present").detail
+    assert "staging tag instead" in detail and "--mervia-env" in detail
+    assert run.status("7.tag.product_page") == "fail"

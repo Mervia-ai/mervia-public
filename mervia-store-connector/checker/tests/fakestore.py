@@ -24,6 +24,7 @@ INCLUDE_KEY = "include-key-456"
 STORE_ID = "example-us"
 PUBLIC_AUTH = ("stageuser", "hunter2pass")
 TAG_SRC = "https://app.mervia.ai/tag/v1/mervia.js"
+STAGING_TAG_SRC = "https://staging-marketing.mervia.ai/tag/v1/mervia.js"
 DEFAULT_CAPS = ["products", "reviews", "articles", "pages", "orders", "content_push"]
 WEBHOOK_CAPS = DEFAULT_CAPS + ["order_webhook", "product_webhook"]  # by arrangement with Mervia
 
@@ -344,7 +345,8 @@ class FakeStore:
         if "no_tag" in self.breaks:
             return ""
         store = "someone-else" if "wrong_store" in self.breaks else STORE_ID
-        tag = f'<script async data-store="{store}" src="{TAG_SRC}"></script>'
+        src = STAGING_TAG_SRC if "staging_tag" in self.breaks else TAG_SRC
+        tag = f'<script async data-store="{store}" src="{src}"></script>'
         return f"<!-- {tag} -->" if "tag_commented" in self.breaks else tag
 
     def shell(self, title: str, head: str = "", body: str = "") -> str:

@@ -9,7 +9,12 @@ import httpx
 from ..report import Result, check, fail, ok, skip
 from . import Context, describe, fetch, first_products, is_ok_page, page_text, public_base
 
-TAG_SRC = "https://app.mervia.ai/tag/v1/mervia.js"
+# One tag src per Mervia environment; a run accepts exactly the one for --mervia-env.
+TAG_SRCS = {
+    "production": "https://app.mervia.ai/tag/v1/mervia.js",
+    "staging": "https://staging-marketing.mervia.ai/tag/v1/mervia.js",
+}
+TAG_SRC = TAG_SRCS["production"]
 _SCRIPT = re.compile(r"<script\b([^>]*)>", re.IGNORECASE)
 _META = re.compile(r"<meta\b([^>]*)>", re.IGNORECASE)
 _COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
@@ -26,8 +31,17 @@ def live_html(page: str) -> str:
     return _COMMENT.sub("", page)
 
 
-def mervia_tags(page: str) -> list[dict[str, str]]:
-    return [a for a in map(attributes, _SCRIPT.findall(live_html(page))) if a.get("src") == TAG_SRC]
+def mervia_tags(page: str, src: str = TAG_SRC) -> list[dict[str, str]]:
+    return [a for a in map(attributes, _SCRIPT.findall(live_html(page))) if a.get("src") == src]
+
+
+def tag_src(ctx: Context) -> str:
+    return TAG_SRCS[ctx.opts.mervia_env]
+
+
+def _other_env(page: str, env: str) -> str | None:
+    """The other environment whose tag the page carries instead, if any."""
+    return next((e for e, s in TAG_SRCS.items() if e != env and mervia_tags(page, s)), None)
 
 
 def _home(ctx: Context) -> tuple[str | None, httpx.Response | httpx.HTTPError | None]:
@@ -41,9 +55,17 @@ def run_tag(ctx: Context) -> list[Result]:
         return [fail(7, "7.tag.present", "no public site to read: pass --public-base-url")]
     if not is_ok_page(home):
         return [fail(7, "7.tag.present", f"could not fetch the home page {url} ({describe(home)})", home)]
-    tags = mervia_tags(page_text(home))
+    src, env = tag_src(ctx), ctx.opts.mervia_env
+    tags = mervia_tags(page_text(home), src)
     present = bool(tags) and bool(tags[0].get("data-store"))
-    results = [check(7, "7.tag.present", present, f'no <script src="{TAG_SRC}" data-store="..."> on {url}', home)]
+    missing = f'no <script src="{src}" data-store="..."> on {url}'
+    other = None if tags else _other_env(page_text(home), env)
+    if other:
+        missing += (
+            f"; the page carries Mervia's {other} tag instead. A store uses the tag of the Mervia environment "
+            f"it connects to; this run checks {env} (--mervia-env)"
+        )
+    results = [check(7, "7.tag.present", present, missing, home, ok_detail=f"{env} tag")]
     if present and ctx.opts.store_id is not None:
         got = tags[0].get("data-store")
         results.append(
@@ -63,7 +85,7 @@ def run_tag(ctx: Context) -> list[Result]:
                 check(
                     7,
                     "7.tag.product_page",
-                    is_ok_page(page) and bool(mervia_tags(page_text(page))),
+                    is_ok_page(page) and bool(mervia_tags(page_text(page), src)),
                     f"the tag is not on the product page {products[0]['url']} ({describe(page)}); "
                     "it belongs on every page",
                     page,

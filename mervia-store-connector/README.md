@@ -52,7 +52,10 @@ sends the tag, and item 10 comes later.
 
 The tracking tag (item 7) records the page path and referrer, nothing typed by the shopper, and
 removes path segments that look like secrets (a password-reset token, for example) before
-anything is stored.
+anything is stored. A store uses the tag of the Mervia environment it connects to, and Mervia
+accepts only that one: `https://app.mervia.ai/tag/v1/mervia.js` for production, and
+`https://staging-marketing.mervia.ai/tag/v1/mervia.js` when the integration connects to Mervia's
+staging. The checker's `--mervia-env` option selects which one it expects.
 
 ## Quick start
 

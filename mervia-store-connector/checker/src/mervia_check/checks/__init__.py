@@ -46,6 +46,7 @@ class Options:
     webhook_timeout: float = 300.0
     include_stub_listen: str | None = None
     content_mode: str = "auto"
+    mervia_env: str = "production"
     timeout: float = 10.0
     insecure: bool = False
     public_auth: str | None = field(default=None, repr=False)
