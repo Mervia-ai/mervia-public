@@ -1,7 +1,7 @@
 # Mervia Store Connector
 
-The contract, conformance checker and Laravel helpers for connecting a store that is not on
-Shopify to [Mervia](https://mervia.ai)'s marketing agent.
+The contract and conformance checker for connecting a store that is not on Shopify to
+[Mervia](https://mervia.ai)'s marketing agent, whatever the store is built with.
 
 Mervia normally connects to a store through its Shopify app. A store on its own platform
 connects through a small set of HTTP endpoints the store's team provides, plus two snippets in
@@ -12,12 +12,12 @@ and verify that integration:
 | --- | --- |
 | [`contract/`](contract/) | The contract as code: `openapi.yaml` for the endpoints the store serves, and JSON Schemas for the order object `GET /orders` lists and, by arrangement only, the two webhooks and the include document. Where prose and these files disagree, the files win. |
 | [`checker/`](checker/) | `mervia-check`, a command-line conformance checker. Point it at a staging base URL and API key and it reports pass or fail per item, with the failing request and response. Staging only; it tags and removes everything it creates. |
-| [`sdk/`](sdk/) | One SDK per platform, each a thin set of helpers for the parts the store's code has to get right (the orders list response, storing and printing the product-page document, the attribution cookie; the signed webhook sender only by arrangement) plus stubs for the endpoints the store serves. Today: [`sdk/laravel/`](sdk/laravel/), with PHPUnit tests. Other platforms are added as siblings; the contract and the checker do not change per platform. |
+| [`sdk/`](sdk/) | Optional helpers for specific platforms, one directory per platform. A store on any stack can implement the contract directly; the contract and the checker are the same for every platform. |
 
 ## The integration in one picture
 
 ```
-store (e.g. Laravel)                          Mervia
+store (any platform)                          Mervia
 --------------------                          ------
 GET  /store, /products, /products/{id},   <-- reads catalog, reviews, pages
      /products/{id}/reviews, /pages
@@ -30,8 +30,8 @@ every page  --tracking tag-->             Mervia counts AI-referred sessions
 
 ## Item numbers
 
-Every check, schema and helper refers to the same eleven items as the integration document a
-store receives from Mervia:
+Every check and schema uses the item numbers of the integration document a store receives from
+Mervia: items 1 to 10, plus item 11, a product-changed webhook available by arrangement only:
 
 | # | Item | Group |
 | --- | --- | --- |

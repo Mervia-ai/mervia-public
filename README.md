@@ -5,7 +5,7 @@ Each top-level directory is an independent project with its own README, tests an
 
 | Directory | What it is |
 | --- | --- |
-| [`mervia-store-connector/`](mervia-store-connector/) | Connect a store that is not on Shopify to Mervia: the HTTP contract as code (OpenAPI + JSON Schemas), `mervia-check` (a conformance checker a store's team runs against their staging site), and per-platform SDKs (`sdk/laravel/` first). |
+| [`mervia-store-connector/`](mervia-store-connector/) | Connect a store that is not on Shopify to Mervia: the HTTP contract as code (OpenAPI + JSON Schemas), `mervia-check` (a conformance checker a store's team runs against their staging site), and optional per-platform helpers. |
 
 ## Contributing
 
