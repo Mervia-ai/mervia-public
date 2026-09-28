@@ -76,15 +76,22 @@ Stated in `openapi.yaml`'s descriptions and enforced by Mervia (and, where marke
 - **Products:** a product missing from one full listing is marked inactive and returns when it
   reappears, so a full listing includes every active product. `specs`, `category` and `rating`
   matter most; ids are stable across edits (an auto-increment id is, a slug is not).
+- **Crawlable catalog and articles:** the store's `sitemap.xml` lists every active product page
+  and every published article, and each active product is linked from server-rendered HTML (a
+  product list page), not only from links drawn in the browser (checker: `2.products.in_sitemap`,
+  `5.articles.*_in_sitemap`).
 - **Reviews:** only reviews already shown on the site; `author_display_name` never an email;
-  `summary.count` at least the number returned (checker: `3.reviews.*`).
+  `summary.count` at least the number returned. An empty reviews list is valid, and a review
+  count not backed by reviews shown on the site is not sent (checker: `3.reviews.*`).
 - **Articles:** the preview and the public page show the body text as sent, with nothing rewritten
   (no smart quotes) or inserted inside the body; `preview_url` must not show the article without
   the key; `type: page` is optional and not needed for go-live (checker: `5.articles.*`).
 - **Product-page content:** `head_html` holds `application/ld+json` blocks with the ids
   `mervia-product-schema`, `mervia-faq-schema`, `mervia-review-schema`; `body_html` a
   `<section id="mervia-shopping-guide">`; both printed unchanged and server-rendered. Mervia
-  looks for these ids on the public page after every change (checker: `6.push.*`).
+  looks for these ids on the public page after every change. Once the page prints
+  `mervia-product-schema`, the store stops printing its own Product JSON-LD there: one Product
+  description per page (checker: `6.push.*`, `6.push.one_product_schema`).
 - **Orders:** listed oldest change first (ascending `updated_at`); an unsorted listing is refused
   and the store is marked failed. The first read after connecting goes back 60 days, then
   Mervia reads hourly (checker: `8.orders.*`).

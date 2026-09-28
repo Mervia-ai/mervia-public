@@ -6,7 +6,7 @@ import httpx
 
 from .. import contract
 from ..report import Result, check, fail, ok, skip, warn
-from . import Context, body_json, describe, fetch, seg, sid, text_in
+from . import Context, body_json, describe, fetch, public_base, seg, sid, sitemap_urls, text_in, url_in
 
 ITEM = 2
 LIST_SCHEMA = contract.response_schema("/products")
@@ -83,6 +83,7 @@ def run(ctx: Context) -> list[Result]:
     results.append(_get_one(ctx, items[0]))
     results.append(_not_found(ctx))
     results.append(public_page(ctx, items[0]))
+    results.append(in_sitemap(ctx, items[0]))
     return results
 
 
@@ -233,3 +234,24 @@ def public_page(ctx: Context, product: dict) -> Result:
     if resp.status_code != 200:
         return fail(ITEM, name, f"public product page answered {resp.status_code}", resp)
     return check(ITEM, name, text_in(resp.text, title), f"public page does not contain the title {title!r}", resp)
+
+
+def in_sitemap(ctx: Context, product: dict) -> Result:
+    """The store's sitemap.xml lists every active product page; checked for the first listed one."""
+    name = "2.products.in_sitemap"
+    url, base = str(product.get("url") or ""), public_base(ctx)
+    if not url or base is None:
+        return skip(ITEM, name, "no product url or public site to check")
+    sitemap = sitemap_urls(ctx, base)
+    if sitemap.urls is None:
+        return warn(ITEM, name, f"{base}/sitemap.xml could not be read ({describe(sitemap.source)})", sitemap.source)
+    if url_in(url, sitemap.urls):
+        return ok(ITEM, name)
+    if sitemap.child_failures:
+        return warn(ITEM, name, f"{url} not found, and {sitemap.child_failures} child sitemap(s) could not be read")
+    return fail(
+        ITEM,
+        name,
+        f"{url} is not in {base}/sitemap.xml; the sitemap lists every active product page",
+        sitemap.source,
+    )

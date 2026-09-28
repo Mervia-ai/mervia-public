@@ -106,7 +106,9 @@ paths:
         when it returns, so a full listing must include every active product. Every field
         beyond the required ones improves what the agent can say; `specs`, `category` and
         `rating` matter most, and `specs` may start empty. Product ids must be stable across
-        edits: an auto-increment id is, a slug is not.
+        edits: an auto-increment id is, a slug is not. The store's `sitemap.xml` lists every
+        active product page, and each active product is linked from server-rendered HTML (a
+        product list page), not only from links drawn in the browser.
       parameters:
         - $ref: "#/components/parameters/limit"
         - $ref: "#/components/parameters/cursor"
@@ -169,7 +171,9 @@ paths:
       description: |
         Only reviews the store already shows publicly are returned. `author_display_name`
         is what the store displays (a first name, initials), never an email address.
-        `summary.count` is at least the number of reviews returned.
+        `summary.count` is at least the number of reviews returned. An empty list is valid
+        (`{"summary": {"average": 0, "count": 0}, "items": [], "next_cursor": null}`); a review
+        count that is not backed by reviews shown on the site is not sent.
       parameters:
         - name: limit
           in: query
@@ -412,7 +416,7 @@ paths:
       tags: [publish]
       summary: "Item 5 — change any field; status published sets it live, hidden takes it down"
       description: |
-        A published article is at its `url`, in the listing and in the sitemap, like any post
+        A published article is at its `url`, in the listing and in `sitemap.xml`, like any post
         written by the store's team. Setting `status` back to `hidden` removes it from all
         three. `content_digest` changes only when `body_html` changes. The public page shows
         the body text as sent, with nothing rewritten or inserted inside it.
@@ -462,7 +466,9 @@ paths:
         lower than the stored one may be ignored), and renders `head_html` inside `<head>` and
         `body_html` where the shopping guide should appear, both unchanged and on the server
         (not in browser JavaScript). Nothing is stored until Mervia sends a document, and the
-        page renders as before Mervia until then. After every change Mervia fetches the public
+        page renders as before Mervia until then. Once the store prints the
+        `mervia-product-schema` block on a product page, it stops printing its own Product
+        JSON-LD on that page: one Product description per page. After every change Mervia fetches the public
         product page and looks for the element ids named in `ProductContent` to confirm the
         change is live. Only by arrangement with Mervia, a store may
         declare `content_pull` instead and fetch the same document from Mervia's include route

@@ -47,7 +47,7 @@ key never produces a green run.
 | Item | Checks (result names) |
 | --- | --- |
 | 1 Store | `GET /store` answers 200 and matches the `Store` schema; `capabilities` holds only known values and not both `content_pull` and `content_push`; `store_id` equals `--store-id`; a random wrong key of the same length and a missing key answer 401 on `/store`, and a missing key answers 401 (not 404) on `GET /products`, `GET /orders`, `GET /articles` and `PATCH`/`DELETE` of a nonexistent article, for the capabilities you declare. |
-| 2 Products | schema of `GET /products?limit=5`; at most 5 items; required fields; https URLs; `next_cursor` followed for up to 3 pages with no repeated id; a full first page with `next_cursor: null` is re-read with `limit=250` and fails if more products come back; `updated_since` far in the future returns nothing, and `updated_since=1970-01-01T00:00:00Z` returns products; `status=all` accepted; page 1 re-read gives the same ids; `GET /products/{id}` matches the list record on id, title and url; an unknown id answers 404; the first product's public page answers 200 without a key, with no redirect, and carries the title. |
+| 2 Products | schema of `GET /products?limit=5`; at most 5 items; required fields; https URLs; `next_cursor` followed for up to 3 pages with no repeated id; a full first page with `next_cursor: null` is re-read with `limit=250` and fails if more products come back; `updated_since` far in the future returns nothing, and `updated_since=1970-01-01T00:00:00Z` returns products; `status=all` accepted; page 1 re-read gives the same ids; `GET /products/{id}` matches the list record on id, title and url; an unknown id answers 404; the first product's public page answers 200 without a key, with no redirect, and carries the title; that page is listed in `sitemap.xml` (a sitemap index is followed one level down; an unreadable sitemap is a warning). |
 | 3 Reviews | for `--product-id`, else a product with reviews, else the first: every page matches the schema; `summary.count` is at least the number of reviews returned; no `author_display_name` contains `@`. Reading zero reviews is a warning, since the checks then prove little. |
 | 4 Pages | schema of `GET /pages`; every `kind` is a known kind. |
 | 5 Articles | the full lifecycle, below. Needs `--allow-writes`. |
@@ -91,7 +91,9 @@ timeout), hides and deletes what it finds, and confirms with a `GET` that answer
 `<script type="application/ld+json" id="mervia-product-schema">` and whose `body_html` is a
 `<section id="mervia-shopping-guide">`, both carrying a token unique to the run. The product's
 public page, fetched as raw HTML without running JavaScript, must contain **both strings
-exactly as sent** ("printed unchanged"; re-serialised JSON fails), the script inside `<head>`.
+exactly as sent** ("printed unchanged"; re-serialised JSON fails), the script inside `<head>`,
+and no other `application/ld+json` block on the page describes a Product (`6.push.one_product_schema`:
+once Mervia's block is printed, the store stops printing its own Product JSON-LD there).
 Then `DELETE`, and the ids must disappear (retried 3 times, 5 s apart, for caches). The document
 is always deleted at the end. Its `version` is the current Unix time, so it is above any version
 stored earlier.

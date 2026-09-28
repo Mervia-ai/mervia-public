@@ -375,6 +375,8 @@ class FakeStore:
             children = "".join(f"<sitemap><loc>{BASE}/sitemap-{k}.xml</loc></sitemap>" for k in ("products", "blogs"))
             return httpx.Response(200, text=f'<?xml version="1.0"?><sitemapindex>{children}</sitemapindex>')
         if path == "/sitemap-products.xml":
+            if "product_not_in_sitemap" in self.breaks:
+                return self.sitemap(p["url"] for p in self.products[1:])
             return self.sitemap(p["url"] for p in self.products)
         if path == "/sitemap-blogs.xml":
             if "broken_child_sitemap" in self.breaks:
@@ -415,6 +417,8 @@ class FakeStore:
             head = head.replace('"@type":"Product"', '"@type": "Product"')
         if "pull_key_in_html" in self.breaks:
             body += f'<script>window.includeKey = "{INCLUDE_KEY}";</script>'
+        if "own_product_schema" in self.breaks:  # the store keeps printing its own Product block
+            head += '<script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":"Product"}]}</script>'
         return H(200, self.shell(title, head=head, body=body))
 
     def fetch_include(self, product: dict) -> str:

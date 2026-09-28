@@ -76,3 +76,26 @@ def test_writes_need_allow_writes(check):
     assert run.status("6.content") == "skip" and "--allow-writes" in run.get("6.content").detail
     assert run.status("5.articles") == "skip"
     assert store.conformance_articles == {} and store.content == {}
+
+
+def test_store_product_schema_next_to_mervias_fails(check):
+    run = check(FakeStore(breaks=("own_product_schema",)), items=[6])
+    assert run.status("6.push.one_product_schema") == "fail"
+    assert "one Product description per page" in run.get("6.push.one_product_schema").detail
+
+
+def test_one_product_schema_passes(check):
+    assert check(FakeStore(), items=[6]).status("6.push.one_product_schema") == "pass"
+
+
+def test_own_product_schemas_counts_only_other_product_blocks():
+    from mervia_check.checks.content_push import own_product_schemas
+
+    page = (
+        '<script type="application/ld+json" id="mervia-product-schema">{"@type":"Product"}</script>'
+        '<script type="application/ld+json">{"@type":"Organization"}</script>'
+        '<script type=\'application/ld+json\'>[{"@type":["Product","Thing"]}]</script>'
+        '<script type="application/ld+json">not json</script>'
+        '<script>{"@type":"Product"}</script>'
+    )
+    assert own_product_schemas(page) == 1

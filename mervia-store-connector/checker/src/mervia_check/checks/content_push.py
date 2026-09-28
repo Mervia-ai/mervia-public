@@ -7,6 +7,7 @@ alone unless named with --product-id, since the check deletes the stored documen
 
 from __future__ import annotations
 
+import json
 import re
 import time
 
@@ -22,6 +23,37 @@ IDS = ("mervia-product-schema", "mervia-shopping-guide")
 
 def ids_present(page: str) -> list[str]:
     return [i for i in IDS if re.search(rf"""id\s*=\s*["']{i}["']""", page)]
+
+
+_LD = re.compile(r"<script\b([^>]*)>(.*?)</script\s*>", re.IGNORECASE | re.DOTALL)
+_LD_TYPE = re.compile(r"""type\s*=\s*["']?application/ld\+json""", re.IGNORECASE)
+_MERVIA_ID = re.compile(r"""id\s*=\s*["']?mervia-product-schema\b""", re.IGNORECASE)
+
+
+def _types(node: object) -> list[str]:
+    """Every @type in a JSON-LD value, following @graph and lists."""
+    if isinstance(node, list):
+        return [t for item in node for t in _types(item)]
+    if not isinstance(node, dict):
+        return []
+    found = node.get("@type")
+    here = found if isinstance(found, list) else [found] if isinstance(found, str) else []
+    return here + _types(node.get("@graph", []))
+
+
+def own_product_schemas(page: str) -> int:
+    """JSON-LD blocks other than mervia-product-schema that describe a Product."""
+    count = 0
+    for attrs, body in _LD.findall(page):
+        if not _LD_TYPE.search(attrs) or _MERVIA_ID.search(attrs):
+            continue
+        try:
+            data = json.loads(body)
+        except ValueError:
+            continue
+        if any(t in ("Product", "ProductGroup") for t in _types(data)):
+            count += 1
+    return count
 
 
 def carries(source: httpx.Response | httpx.HTTPError, doc: dict) -> bool:
@@ -92,6 +124,18 @@ def run(ctx: Context) -> list[Result]:
                     "6.push.in_head",
                     in_head(page_text(page), doc["head_html"]),
                     "head_html is not inside <head>",
+                    page,
+                )
+            )
+            others = own_product_schemas(page_text(page))
+            results.append(
+                check(
+                    ITEM,
+                    "6.push.one_product_schema",
+                    not others,
+                    f"with mervia-product-schema printed, the page still carries {others} other Product "
+                    "JSON-LD block(s); stop printing the store's own Product JSON-LD on that page "
+                    "(one Product description per page)",
                     page,
                 )
             )

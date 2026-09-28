@@ -64,3 +64,13 @@ def test_public_auth_reaches_a_basic_auth_site(check):
     assert check(store, items=[2]).get("2.products.public_page").warning  # 401: blocked
     run = check(FakeStore(breaks=("basic_auth_site",)), items=[2, 7], public_auth="stageuser:hunter2pass")
     assert run.failures() == [] and not run.get("2.products.public_page").warning
+
+
+def test_product_missing_from_sitemap_fails(check):
+    run = check(FakeStore(breaks=("product_not_in_sitemap",)), items=[2])
+    assert run.status("2.products.in_sitemap") == "fail"
+    assert "sitemap" in run.get("2.products.in_sitemap").detail
+
+
+def test_product_in_sitemap_passes(check):
+    assert check(FakeStore(), items=[2]).status("2.products.in_sitemap") == "pass"
